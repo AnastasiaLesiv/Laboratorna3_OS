@@ -1,0 +1,38 @@
+using System;
+using System.Threading;
+
+public interface Once
+{
+    void Exec(Action action);
+}
+
+public class OnceImpl : Once
+{
+    
+    private bool executed = false;
+    private readonly object lockObject = new object();
+
+    public void Exec(Action action)
+    {
+        
+        lock (lockObject)
+        {
+            if (!executed)
+            {
+                action();
+                executed = true;
+            }
+        }
+    }
+}
+
+class Program
+{
+    static void Main(string[] args)
+    {
+        Once once = new OnceImpl();
+        Action task = () => Console.WriteLine("Task executed");
+        once.Exec(task);
+        once.Exec(task);
+    }
+}
