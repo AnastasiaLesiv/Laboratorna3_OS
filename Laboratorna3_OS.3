@@ -1,0 +1,89 @@
+using System;
+using System.Collections.Generic;
+using System.Threading;
+
+class Message {
+    public string Content { get; set; }
+
+    public Message(string content) {
+        Content = content;
+    }
+}
+
+interface MessageQueue {
+    void Add(Message message);
+    Message Poll();
+}
+
+class BlockingMessageQueue : MessageQueue {
+    private readonly Queue<Message> queue;
+    private readonly int maxCapacity;
+
+    public BlockingMessageQueue(int maxCapacity) {
+        if (maxCapacity <= 0) {
+            throw new ArgumentException("Max capacity must be greater than 0");
+        }
+
+        this.maxCapacity = maxCapacity;
+        this.queue = new Queue<Message>();
+    }
+
+    public void Add(Message message) {
+        lock (queue) {
+            while (queue.Count >= maxCapacity) {
+                Monitor.Wait(queue);
+            }
+
+            queue.Enqueue(message);
+            Monitor.PulseAll(queue);
+        }
+    }
+
+    public Message Poll() {
+        lock (queue) {
+            while (queue.Count == 0) {
+                Monitor.Wait(queue);
+            }
+
+            Message message = queue.Dequeue();
+            Monitor.PulseAll(queue);
+
+            return message;
+        }
+    }
+}
+
+class Program {
+    static void Main() {
+        BlockingMessageQueue messageQueue = new BlockingMessageQueue(5);
+        int totalMessages = 10;  // Загальна кількість повідомлень, які мають бути вироблені
+
+        // Producer
+        ThreadPool.QueueUserWorkItem(_ => {
+            for (int i = 0; i < totalMessages; i++) {
+                Message message = new Message($"Message № {i}");
+                messageQueue.Add(message);
+                Console.WriteLine($"Produced: {message.Content}");
+                Thread.Sleep(100);  // Simulate some work
+            }
+        });
+
+        // Consumer
+        ThreadPool.QueueUserWorkItem(_ => {
+            int consumedMessages = 0;
+            while (consumedMessages < totalMessages) {
+                Message message = messageQueue.Poll();
+                Console.WriteLine($"Consumed: {message.Content}");
+                Thread.Sleep(200);  // Simulate some work
+                consumedMessages++;
+            }
+
+            // Signal the end of consuming
+            Console.WriteLine("All messages consumed. Exiting...");
+            Monitor.Exit(messageQueue);  // Optionally release the lock
+        });
+
+        Console.ReadLine();  // Wait for threads to finish
+    }
+}
+
